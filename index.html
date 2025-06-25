@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Unlock Code Generator</title>
+    <title>Lowrance коды</title>
     <!-- CryptoJS for SHA1 and MD5 -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/crypto-js/4.1.1/crypto-js.min.js"></script>
     <style>
@@ -154,8 +154,8 @@
             var val = input.value.toUpperCase();
             input.value = val;
             resultDiv.querySelectorAll('.card:not(.disclaimer)').forEach(e => e.remove());
-            if (val.length === 10) {
-                if (/^[0-9A-F]{10}$/.test(val)) {
+            if (/^[0-9A-F]{10}$/.test(val)) {
+                if (val.length === 10) {
                     var codes = await generateCodes(val);
                     codes.forEach(r => {
                         var card = document.createElement('div');
@@ -163,12 +163,12 @@
                         card.innerHTML = `<span class="label">${r.label}:</span><span class="code">${r.code}</span>`;
                         resultDiv.insertBefore(card, resultDiv.querySelector('.disclaimer'));
                     });
-                } else {
-                    var err = document.createElement('div');
-                    err.className = 'card';
-                    err.textContent = 'Error: Input must be hex digits (0-9, A-F).';
-                    resultDiv.insertBefore(err, resultDiv.querySelector('.disclaimer'));
                 }
+            } else {
+                var err = document.createElement('div');
+                err.className = 'card';
+                err.textContent = 'Неверный код, проверьте правильность ввода. 0 — цифра';
+                resultDiv.insertBefore(err, resultDiv.querySelector('.disclaimer'));
             }
         });
     </script>
