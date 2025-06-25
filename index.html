@@ -1,0 +1,176 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Unlock Code Generator</title>
+    <!-- CryptoJS for SHA1 and MD5 -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/crypto-js/4.1.1/crypto-js.min.js"></script>
+    <style>
+        body {
+            background-color: #000;
+            color: #fff;
+            font-family: sans-serif;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            padding: 20px;
+        }
+        h1 {
+            margin-bottom: 20px;
+        }
+        input {
+            background: #111;
+            border: 1px solid #444;
+            border-radius: 8px;
+            color: #fff;
+            padding: 10px;
+            font-size: 1.2em;
+            text-transform: uppercase;
+            width: 200px;
+            text-align: center;
+            outline: none;
+        }
+        input:focus {
+            border-color: #666;
+        }
+        .results {
+            margin-top: 20px;
+            width: 100%;
+            max-width: 400px;
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+        }
+        .card {
+            background: #222;
+            padding: 15px;
+            border-radius: 8px;
+            border: 1px solid #444;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        .card span.label {
+            font-weight: bold;
+        }
+        .card span.code {
+            font-family: monospace;
+            font-size: 1.4em;
+        }
+        .card.disclaimer {
+            justify-content: flex-start;
+            font-size: 0.9em;
+            text-align: left;
+        }
+    </style>
+</head>
+<body>
+    <h1>Коды для Lowrance/Simrad</h1>
+    <input id="rcInput" type="text" maxlength="10" placeholder="Request code:" />
+    <div class="results" id="results">
+        <div class="card disclaimer">Русский языковой пакет невозможно активировать вводом кода на актуальных прошивках. Ввод кода недоступен, если языковой пакет уже активирован (болгарский язык, азиатский пакет)</div>
+    </div>
+
+    <script>
+        function wordArrayToUint8Array(wordArray) {
+            var len = wordArray.sigBytes;
+            var words = wordArray.words;
+            var u8_array = new Uint8Array(len);
+            for (var i = 0; i < len; i++) {
+                var word = words[i >>> 2];
+                u8_array[i] = (word >>> (24 - (i % 4) * 8)) & 0xFF;
+            }
+            return u8_array;
+        }
+
+        function byteXor(a, b) {
+            var len = Math.min(a.length, b.length);
+            var out = new Uint8Array(len);
+            for (var i = 0; i < len; i++) {
+                out[i] = a[i] ^ b[i];
+            }
+            return out;
+        }
+
+        async function unlockCode(featureRc) {
+            var sha1WA = CryptoJS.SHA1(CryptoJS.enc.Latin1.parse(featureRc));
+            var first = wordArrayToUint8Array(sha1WA);
+            var unlockBytes = new TextEncoder().encode('Unlock');
+            var saltedFirst = byteXor(first.slice(0,6), unlockBytes).buffer;
+            var salted = new Uint8Array(saltedFirst.byteLength + first.slice(6).length);
+            salted.set(new Uint8Array(saltedFirst), 0);
+            salted.set(first.slice(6), 6);
+            var sha1Second = CryptoJS.SHA1(CryptoJS.lib.WordArray.create(salted));
+            var second = wordArrayToUint8Array(sha1Second);
+            var hex = Array.from(second).map(b => b.toString(16).padStart(2,'0')).join('').toUpperCase();
+            return hex.slice(-10);
+        }
+
+        async function generateCodes(rc) {
+            var results = [];
+            var main = await unlockCode(rc);
+            results.push({ label: 'GeoFencing', code: main });
+
+            var features = {
+                'Asian': '2857749636',
+                'MiddleEastern': '2857749635',
+                'RussianUkrainian': '2857749634',
+                'EasternEuropean': '2857749633'
+            };
+
+            for (var name in features) {
+                var key = features[name];
+                var rcBytes = new TextEncoder().encode(rc);
+                var keyBytes = new TextEncoder().encode(key);
+                var start = byteXor(rcBytes, keyBytes);
+                var s1WA = CryptoJS.SHA1(CryptoJS.lib.WordArray.create(start));
+                var s1 = wordArrayToUint8Array(s1WA);
+                var firstBytes = new TextEncoder().encode('First');
+                var s2head = byteXor(s1.slice(0, firstBytes.length), firstBytes);
+                var s2 = new Uint8Array(s1.length);
+                s2.set(s2head, 0);
+                s2.set(s1.slice(firstBytes.length), firstBytes.length);
+                var s3WA = CryptoJS.MD5(CryptoJS.lib.WordArray.create(s2));
+                var s3 = wordArrayToUint8Array(s3WA);
+                var lastBytes = new TextEncoder().encode('Last');
+                var s4 = new Uint8Array(s3.length);
+                s4.set(s3.slice(0, s3.length - lastBytes.length), 0);
+                var tail = byteXor(s3.slice(s3.length - lastBytes.length), lastBytes);
+                s4.set(tail, s3.length - lastBytes.length);
+                var s5WA = CryptoJS.SHA1(CryptoJS.lib.WordArray.create(s4));
+                var s5 = wordArrayToUint8Array(s5WA);
+                var featureRc = Array.from(s5).map(b => b.toString(16).padStart(2,'0')).join('').toUpperCase().slice(-10);
+                var code = await unlockCode(featureRc);
+                results.push({ label: name, code: code });
+            }
+            return results;
+        }
+
+        const input = document.getElementById('rcInput');
+        const resultDiv = document.getElementById('results');
+
+        input.addEventListener('input', async () => {
+            var val = input.value.toUpperCase();
+            input.value = val;
+            resultDiv.querySelectorAll('.card:not(.disclaimer)').forEach(e => e.remove());
+            if (val.length === 10) {
+                if (/^[0-9A-F]{10}$/.test(val)) {
+                    var codes = await generateCodes(val);
+                    codes.forEach(r => {
+                        var card = document.createElement('div');
+                        card.className = 'card';
+                        card.innerHTML = `<span class="label">${r.label}:</span><span class="code">${r.code}</span>`;
+                        resultDiv.insertBefore(card, resultDiv.querySelector('.disclaimer'));
+                    });
+                } else {
+                    var err = document.createElement('div');
+                    err.className = 'card';
+                    err.textContent = 'Error: Input must be hex digits (0-9, A-F).';
+                    resultDiv.insertBefore(err, resultDiv.querySelector('.disclaimer'));
+                }
+            }
+        });
+    </script>
+</body>
+</html>
